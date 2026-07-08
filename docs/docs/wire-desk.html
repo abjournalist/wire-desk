@@ -392,13 +392,13 @@ const CATS = [
   {id:'reg', label:'Regulation & Competition', color:'#A63D40'},
   {id:'mkt', label:'Markets & Economy', color:'#B98D4B'},
   {id:'tech', label:'Tech & AI', color:'#5C8D89'},
-  {id:'wire', label:'News', color:'#8A93AC'},
-  {id:'cpn', label:'Companies', color:'#B98D4B'},
+  {id:'companies', label:'Companies', color:'#7D5BA6'},
+  {id:'wire', label:'Wires & Papers', color:'#8A93AC'},
 ];
 
 let SOURCES = [
   {id:'cma', name:'CMA (gov.uk)', url:'https://www.gov.uk/government/organisations/competition-and-markets-authority.atom', cat:'reg'},
-  {id:'google', name:'Google UK', url:'https://blog.google/company-news/inside-google/around-the-globe/google-europe/united-kingdom/rss/', cat:'cpn'},
+  {id:'ofcom', name:'Ofcom', url:'https://www.gov.uk/government/organisations/ofcom.atom', cat:'reg'},
   {id:'boe', name:'Bank of England', url:'https://www.bankofengland.co.uk/rss/news', cat:'mkt'},
   {id:'bbc-econ', name:'BBC Economy', url:'https://feeds.bbci.co.uk/news/business/economy/rss.xml', cat:'mkt'},
   {id:'cityam', name:'City AM', url:'https://www.cityam.com/feed/', cat:'mkt'},
@@ -409,20 +409,21 @@ let SOURCES = [
   {id:'gu-biz', name:'Guardian Business', url:'https://www.theguardian.com/uk/business/rss', cat:'wire'},
   {id:'sky-biz', name:'Sky News Business', url:'https://feeds.skynews.com/feeds/rss/business.xml', cat:'wire'},
   {id:'standard-biz', name:'Evening Standard Business', url:'https://www.standard.co.uk/business/rss', cat:'wire'},
-  {id:'telegraph', name:'The Telegraph', url:'https://www.telegraph.co.uk/business/rss.xml', cat:'wire'},
+  {id:'telegraph', name:'The Telegraph Business', url:'https://www.telegraph.co.uk/business/rss.xml', cat:'wire'},
+  {id:'independent-biz', name:'Independent Business', url:'https://www.independent.co.uk/news/business/rss', cat:'wire'},
+  {id:'times-business', name:'The Times Business (via Google News)', url:'https://news.google.com/rss/search?q=site:thetimes.co.uk+business&hl=en-US&gl=US&ceid=US:en', cat:'wire'},
   {id:'ft-uk', name:'FT UK', url:'https://www.ft.com/world/uk?format=rss', cat:'wire'},
-  {id:'reuters-uk', name:'Reuters UK (via Google News)', url:'https://news.google.com/rss/search?q=site:reuters.com/world/uk&hl=en-GB&gl=GB&ceid=GB:en', cat:'wire'},
-  {id:'bloomberg-uk', name:'Bloomberg (via Google News)', url:'https://news.google.com/rss/search?q=site:bloomberg.com+UK&hl=en-GB&gl=GB&ceid=GB:en', cat:'wire'},
-  {id:'times-business', name:'The Times (via Google News)', url:'https://news.google.com/rss/search?q=site:thetimes.co.uk+business&hl=en-GB&gl=GB&ceid=GB:en', cat:'wire'},
-  {id:'microsoft', name:'Microsoft', url:'https://ukstories.microsoft.com/feed/', cat:'cpn'},
- 
-
+  {id:'reuters-uk', name:'Reuters UK (via Google News)', url:'https://news.google.com/rss/search?q=site:reuters.com/world/uk&hl=en-US&gl=US&ceid=US:en', cat:'wire'},
+  {id:'bloomberg-uk', name:'Bloomberg (via Google News)', url:'https://news.google.com/rss/search?q=site:bloomberg.com+UK&hl=en-US&gl=US&ceid=US:en', cat:'wire'},
+  {id:'google-uk', name:'Google UK', url:'https://blog.google/company-news/inside-google/around-the-globe/google-europe/united-kingdom/rss/', cat:'companies'},
+  {id:'microsoft-uk', name:'Microsoft UK Stories', url:'https://ukstories.microsoft.com/feed/', cat:'companies'},
 ];
 
 let selected = new Set(SOURCES.map(s => s.id));
 let allItems = [];
 let statusMap = {};
 let lastPullTime = 0;
+let sourceItemsCache = {}; // source.id -> last successfully fetched items, used as fallback on transient failures
 
 // ---------- persistence (real browser localStorage — this runs as a normal hosted page) ----------
 let sessionBaseline = null; // timestamp of the previous visit, used to flag "new" items this session
@@ -488,6 +489,7 @@ function renderSidebar(){
       row.innerHTML = `
         <input type="checkbox" data-id="${s.id}" ${selected.has(s.id) ? 'checked' : ''}>
         <span>${s.name}</span>
+        ${s.custom ? `<span class="remove-btn" data-remove-id="${s.id}" title="remove this source">✕</span>` : ''}
         <span class="status" id="status-${s.id}"></span>
       `;
       group.appendChild(row);
@@ -499,6 +501,20 @@ function renderSidebar(){
       const id = e.target.dataset.id;
       if(e.target.checked) selected.add(id); else selected.delete(id);
       savePrefs();
+      renderFeed();
+    });
+  });
+  container.querySelectorAll('.remove-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      const id = e.target.dataset.removeId;
+      SOURCES = SOURCES.filter(s => s.id !== id);
+      selected.delete(id);
+      allItems = allItems.filter(it => it.source !== (SOURCES.find(s => s.id === id)?.name));
+      delete sourceItemsCache[id];
+      saveCustom();
+      savePrefs();
+      renderSidebar();
       renderFeed();
     });
   });
@@ -542,11 +558,16 @@ function parseFeedXML(xmlText, source){
   return items;
 }
 
-async function fetchViaProxy(url){
+async function fetchViaProxy(rawUrl){
+  // append a cache-busting param so the target URL looks unique each call —
+  // some public CORS relays cache responses server-side for several minutes
+  // regardless of our own no-store fetch option, which can mask fresh headlines
+  const bust = 'cb=' + Date.now();
+  const url = rawUrl + (rawUrl.includes('?') ? '&' : '?') + bust;
   const proxies = [
-    'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
-    'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url),
-    'https://corsproxy.io/?url=' + encodeURIComponent(url),
+    'https://api.allorigins.win/raw?url=' + encodeURIComponent(url) + '&_=' + Date.now(),
+    'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url) + '&_=' + Date.now(),
+    'https://corsproxy.io/?url=' + encodeURIComponent(url) + '&_=' + Date.now(),
   ];
   let lastErr;
   for(const p of proxies){
@@ -569,11 +590,14 @@ async function fetchSource(source){
   try{
     const xml = await fetchViaProxy(source.url);
     const items = parseFeedXML(xml, source);
+    sourceItemsCache[source.id] = items; // remember this as the last-known-good set
     setStatus(source.id, 'ok');
     return items;
   }catch(e){
     setStatus(source.id, 'err');
-    return [];
+    // transient failure — fall back to whatever we last successfully fetched
+    // rather than making headlines disappear entirely
+    return sourceItemsCache[source.id] || [];
   }
 }
 
