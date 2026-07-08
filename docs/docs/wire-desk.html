@@ -408,7 +408,6 @@ let SOURCES = [
   {id:'bbc-biz', name:'BBC Business', url:'https://feeds.bbci.co.uk/news/business/rss.xml', cat:'wire'},
   {id:'gu-biz', name:'Guardian Business', url:'https://www.theguardian.com/uk/business/rss', cat:'wire'},
   {id:'sky-biz', name:'Sky News Business', url:'https://feeds.skynews.com/feeds/rss/business.xml', cat:'wire'},
-  {id:'sky-tek', name:'Sky News Tech', url:'https://feeds.skynews.com/feeds/rss/technology.xml', cat:'tech'} 
   {id:'standard-biz', name:'Evening Standard Business', url:'https://www.standard.co.uk/business/rss', cat:'wire'},
   {id:'telegraph', name:'The Telegraph Business', url:'https://www.telegraph.co.uk/business/rss.xml', cat:'wire'},
   {id:'independent-biz', name:'Independent Business', url:'https://www.independent.co.uk/news/business/rss', cat:'wire'},
@@ -572,15 +571,19 @@ async function fetchViaProxy(rawUrl){
   ];
   let lastErr;
   for(const p of proxies){
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // give up on a slow proxy after 8s
     try{
-      const res = await fetch(p, {cache:'no-store'});
+      const res = await fetch(p, {cache:'no-store', signal: controller.signal});
+      clearTimeout(timeoutId);
       if(!res.ok) throw new Error('bad status ' + res.status);
       const text = await res.text();
       if(!text || text.length < 30) throw new Error('empty body');
       return text;
     }catch(e){
-      lastErr = e;
-      console.warn('proxy failed:', p, e.message);
+      clearTimeout(timeoutId);
+      lastErr = e.name === 'AbortError' ? new Error('timed out') : e;
+      console.warn('proxy failed:', p, lastErr.message);
     }
   }
   throw lastErr || new Error('all proxies failed');
