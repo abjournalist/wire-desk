@@ -494,9 +494,10 @@ let SOURCES = [
   ], cat:'wire'},
   {id:'google-uk', name:'Google UK', url:'https://blog.google/company-news/inside-google/around-the-globe/google-europe/united-kingdom/rss/', cat:'companies'},
   {id:'microsoft-uk', name:'Microsoft UK Stories', url:'https://ukstories.microsoft.com/feed/', cat:'companies'},
+  {id:'revolut', name:'Revolut', url:'https://kill-the-newsletter.com/feeds/6roa06d1ragwxb2g5f8k.xml', cat:'companies'},
 ];
 
-let selected = new Set(SOURCES.map(s => s.id));
+let selected = new Set(SOURCES.filter(s => !s.defaultOff).map(s => s.id));
 let allItems = [];
 let statusMap = {};
 let lastPullTime = 0;
@@ -512,7 +513,7 @@ function loadPrefs(){
       const arr = JSON.parse(raw);
       selected = new Set(arr);
       // any default source not present in the saved selection is a newly-added one — default it to checked
-      SOURCES.filter(s => !s.custom).forEach(s => { if(!arr.includes(s.id)) selected.add(s.id); });
+      SOURCES.filter(s => !s.custom && !s.defaultOff).forEach(s => { if(!arr.includes(s.id)) selected.add(s.id); });
     }
   }catch(e){ /* no saved prefs yet */ }
   try{
