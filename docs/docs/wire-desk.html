@@ -644,63 +644,36 @@ function parseFeedXML(xmlText, source){
 }
 
 // ---------- global request throttling ----------
-// the free CORS relays below have real rate limits (roughly 20/min for
-// AllOrigins, 5/sec for CodeTabs); with 30+ feed URLs now in the dashboard,
-// firing everything at once on a pull can trip those limits and cause a
-// cascading total failure. This caps how many actual network requests are
-// in flight at once, regardless of how many sources/URLs triggered them.
-const MAX_CONCURRENT_REQUESTS = 4;
-let activeRequests = 0;
-const requestQueue = [];
-function withConcurrencyLimit(fn){
-  return new Promise((resolve, reject) => {
-    const run = async () => {
-      activeRequests++;
-      try{
-        resolve(await fn());
-      }catch(e){
-        reject(e);
-      }finally{
-        activeRequests--;
-        if(requestQueue.length > 0) requestQueue.shift()();
-      }
-    };
-    if(activeRequests < MAX_CONCURRENT_REQUESTS) run();
-    else requestQueue.push(run);
-  });
-}
+// Alex's own Cloudflare Worker — reliable, owned infrastructure, no rate-limit
+// roulette. The old free public relays are kept below purely as a last-resort
+// fallback in case the Worker itself is ever down, but should rarely be needed.
+const OWN_PROXY = 'https://monitoring-desk-proxy.alex-bacon.workers.dev/?url=';
 
 async function fetchViaProxy(rawUrl){
   // append a cache-busting param so the target URL looks unique each call —
-  // some public CORS relays cache responses server-side for several minutes
-  // regardless of our own no-store fetch option, which can mask fresh headlines
+  // proxies can cache responses server-side, which can mask fresh headlines
   const bust = 'cb=' + Date.now();
   const url = rawUrl + (rawUrl.includes('?') ? '&' : '?') + bust;
-  const proxies = [
+
+  const attempts = [
+    OWN_PROXY + encodeURIComponent(url),
     'https://api.allorigins.win/raw?url=' + encodeURIComponent(url) + '&_=' + Date.now(),
     'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url) + '&_=' + Date.now(),
-    'https://proxy.killcors.com/?url=' + encodeURIComponent(url) + '&_=' + Date.now(),
   ];
+
   let lastErr;
-  for(const p of proxies){
+  for(const p of attempts){
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // give up on a slow attempt after 8s
     try{
-      const text = await withConcurrencyLimit(async () => {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000); // give up on a slow proxy after 8s
-        try{
-          const res = await fetch(p, {cache:'no-store', signal: controller.signal});
-          clearTimeout(timeoutId);
-          if(!res.ok) throw new Error('bad status ' + res.status);
-          const t = await res.text();
-          if(!t || t.length < 30) throw new Error('empty body');
-          return t;
-        }catch(e){
-          clearTimeout(timeoutId);
-          throw e;
-        }
-      });
+      const res = await fetch(p, {cache:'no-store', signal: controller.signal});
+      clearTimeout(timeoutId);
+      if(!res.ok) throw new Error('bad status ' + res.status);
+      const text = await res.text();
+      if(!text || text.length < 30) throw new Error('empty body');
       return text;
     }catch(e){
+      clearTimeout(timeoutId);
       lastErr = e.name === 'AbortError' ? new Error('timed out') : e;
       console.warn('proxy failed:', p, lastErr.message);
     }
