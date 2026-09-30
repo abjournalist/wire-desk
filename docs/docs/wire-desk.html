@@ -21,6 +21,19 @@
     --mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
     --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
+  html[data-theme="light"]{
+    --ink:#F7F4EC;
+    --panel:#EFEAE0;
+    --panel-2:#EFEAE079;
+    --paper:#1F1E1B;
+    --brass:#0B3D91;
+    --wire-red:#A63D40;
+    --teal:#3F726D;
+    --slate:#6B7280;
+    --muted:#8A8370;
+    --hairline:#E3DDCC;
+  }
+  body{transition:background 0.2s ease, color 0.2s ease;}
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
@@ -30,7 +43,7 @@
     min-height:100vh;
   }
   ::selection{background:var(--brass);color:var(--ink);}
- 
+
   /* ---------- warning banner ---------- */
   .warning-banner{
     background:#3A2A1A;
@@ -54,7 +67,7 @@
     opacity:0.7;
   }
   .warning-banner button:hover{opacity:1;}
- 
+
   /* ---------- header ---------- */
   .masthead{
     border-bottom:1px solid var(--hairline);
@@ -114,13 +127,14 @@
     margin-top:2px;
   }
   .clock-block .since-label.none{color:var(--muted);}
- 
+
   /* ---------- layout ---------- */
   .layout{
     display:grid;
-    grid-template-columns:240px 1fr;
+    grid-template-columns:var(--sidebar-width, 240px) 1fr;
     gap:0;
     min-height:calc(100vh - 64px);
+    position:relative;
   }
   .mobile-toggle{
     display:none;
@@ -142,7 +156,25 @@
     color:var(--muted);
   }
   .mobile-toggle.expanded .chevron{transform:rotate(90deg);}
- 
+
+  .resize-handle{
+    position:absolute;
+    top:0;
+    bottom:0;
+    left:var(--sidebar-width, 240px);
+    width:6px;
+    margin-left:-3px;
+    cursor:col-resize;
+    z-index:10;
+  }
+  .resize-handle:hover, .resize-handle.dragging{
+    background:var(--brass);
+    opacity:0.3;
+  }
+  @media (max-width: 780px){
+    .resize-handle{display:none;}
+  }
+
   /* ---------- sidebar ---------- */
   .sidebar{
     border-right:1px solid var(--hairline);
@@ -232,7 +264,7 @@
   .status.err{background:var(--wire-red);}
   .status.loading{background:var(--brass);animation:pulse 1s ease-in-out infinite;}
   @keyframes pulse{50%{opacity:0.3;}}
- 
+
   .sidebar-foot{
     margin-top:24px;
     padding-top:16px;
@@ -253,6 +285,20 @@
     transition:background 0.15s, color 0.15s;
   }
   .refresh-btn:hover{background:var(--brass);color:var(--ink);}
+  #themeToggle{
+    background:none;
+    border:1px solid var(--hairline);
+    border-radius:4px;
+    width:32px;
+    height:32px;
+    font-size:15px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    transition:border-color 0.15s;
+  }
+  #themeToggle:hover{border-color:var(--brass);}
   .add-feed{margin-top:14px;}
   .add-feed input{
     width:100%;
@@ -279,7 +325,7 @@
     cursor:pointer;
   }
   .add-feed button:hover{color:var(--paper);border-color:var(--muted);}
- 
+
   /* ---------- main ---------- */
   .main{padding:20px 28px 60px;}
   .toolbar{
@@ -317,7 +363,7 @@
     color:var(--muted);
     white-space:nowrap;
   }
- 
+
   .feed{
     border-top:1px solid var(--hairline);
   }
@@ -377,7 +423,7 @@
     border-bottom:1px solid transparent;
   }
   .entry-title a:hover{border-bottom-color:var(--brass);color:var(--brass);}
- 
+
   .empty-state, .init-state{
     padding:60px 20px;
     text-align:center;
@@ -387,7 +433,7 @@
     letter-spacing:1px;
   }
   .init-state .time{color:var(--brass);}
- 
+
   footer.note{
     margin-top:24px;
     font-family:var(--mono);
@@ -399,7 +445,7 @@
 </style>
 </head>
 <body>
- 
+
 <div class="warning-banner" id="warningBanner" style="display:none;">
   <span id="warningText"></span>
   <button id="warningDismiss" type="button">✕</button>
@@ -409,13 +455,16 @@
     <h1>Monitoring Desk</h1>
     <span class="kicker">UK Business &amp; Economics</span>
   </div>
-  <div class="clock-block">
-    <div id="clock" class="time">--:--:--</div>
-    <div id="updatedLabel">not yet updated</div>
-    <div id="sinceLabel" class="since-label"></div>
+  <div style="display:flex; align-items:center; gap:16px;">
+    <button id="themeToggle" type="button" title="Switch theme">🌙</button>
+    <div class="clock-block">
+      <div id="clock" class="time">--:--:--</div>
+      <div id="updatedLabel">not yet updated</div>
+      <div id="sinceLabel" class="since-label"></div>
+    </div>
   </div>
 </div>
- 
+
 <div class="layout">
   <div class="mobile-toggle" id="mobileToggle">
     <span id="mobileToggleLabel">Sources</span>
@@ -438,7 +487,8 @@
       </div>
     </div>
   </div>
- 
+  <div class="resize-handle" id="resizeHandle"></div>
+
   <div class="main">
     <div class="toolbar">
       <div class="search-box">
@@ -455,7 +505,7 @@
     </footer>
   </div>
 </div>
- 
+
 <script>
 const CATS = [
   {id:'reg', label:'Regulation & Competition', color:'#A63D40'},
@@ -464,7 +514,7 @@ const CATS = [
   {id:'companies', label:'Companies', color:'#7D5BA6'},
   {id:'wire', label:'Wires & Papers', color:'#8A93AC'},
 ];
- 
+
 let SOURCES = [
   {id:'cma', name:'CMA (gov.uk)', url:'https://www.gov.uk/government/organisations/competition-and-markets-authority.atom', cat:'reg'},
   {id:'ofcom', name:'Ofcom', url:['https://www.gov.uk/government/organisations/ofcom.atom', 'https://news.google.com/rss/search?q=site:ofcom.org.uk+when:30d&hl=en-US&gl=US&ceid=US:en', 'https://kill-the-newsletter.com/feeds/8wb93jthb6p70y9vohkx.xml'], cat:'reg'},
@@ -474,6 +524,7 @@ let SOURCES = [
   {id:'ft-companies', name:'FT Companies', url:'https://www.ft.com/companies?format=rss', cat:'mkt'},
   {id:'bbc-tech', name:'BBC Technology', url:'https://feeds.bbci.co.uk/news/technology/rss.xml', cat:'tech'},
   {id:'gu-tech', name:'Guardian Technology', url:'https://www.theguardian.com/uk/technology/rss', cat:'tech'},
+  {id:'aisi', name:'AI Security Institute', url:['https://www.gov.uk/government/organisations/ai-security-institute.atom', 'https://news.google.com/rss/search?q=site:aisi.gov.uk/blog&hl=en-US&gl=US&ceid=US:en'], cat:'tech'},
   {id:'bbc-biz', name:'BBC Business', url:'https://feeds.bbci.co.uk/news/business/rss.xml', cat:'wire'},
   {id:'gu-biz', name:'Guardian Business', url:'https://www.theguardian.com/uk/business/rss', cat:'wire'},
   {id:'sky-biz', name:'Sky News Business', url:'https://feeds.skynews.com/feeds/rss/business.xml', cat:'wire'},
@@ -489,22 +540,24 @@ let SOURCES = [
     'https://www.bloomberg.com/authors/AW6xtbTD-gc/jacob-reid.rss',
     'https://www.bloomberg.com/authors/AWY9PNBczAI/maddie-parker.rss',
     'https://www.bloomberg.com/authors/AWTeEfv10w8/kate-duffy.rss',
+    'https://www.bloomberg.com/authors/AVcbFaoiSa4/jillian-deutsch.rss',
     'https://www.bloomberg.com/authors/AThxRyFAp60/will-mathis.rss',
     {url:'https://www.bloomberg.com/authors/AWANKk-wMdw/mitchell-ferman.rss', filter:['BP','Shell']}
   ], cat:'wire'},
   {id:'google-uk', name:'Google UK', url:'https://blog.google/company-news/inside-google/around-the-globe/google-europe/united-kingdom/rss/', cat:'companies'},
+  {id:'bp-press', name:'BP', url:'https://kill-the-newsletter.com/feeds/mrldqfzeq5kl5vlv2vlo.xml', cat:'companies'},
   {id:'revolut', name:'Revolut', url:'https://kill-the-newsletter.com/feeds/6roa06d1ragwxb2g5f8k.xml', cat:'companies'},
 ];
- 
+
 let selected = new Set(SOURCES.filter(s => !s.defaultOff).map(s => s.id));
 let allItems = [];
 let statusMap = {};
 let lastPullTime = 0;
 let sourceItemsCache = {}; // source.id -> last successfully fetched items, used as fallback on transient failures
- 
+
 // ---------- persistence (real browser localStorage — this runs as a normal hosted page) ----------
 let sessionBaseline = null; // timestamp of the previous visit, used to flag "new" items this session
- 
+
 function loadPrefs(){
   try{
     const raw = localStorage.getItem('wire-desk-selected');
@@ -544,7 +597,7 @@ function initLastVisit(){
 function markVisitEnd(){
   try{ localStorage.setItem('wire-desk-last-visit', new Date().toISOString()); }catch(e){}
 }
- 
+
 // ---------- clock ----------
 function tickClock(){
   const d = new Date();
@@ -552,7 +605,7 @@ function tickClock(){
 }
 setInterval(tickClock, 1000);
 tickClock();
- 
+
 // ---------- sidebar rendering ----------
 function renderSidebar(){
   updateMobileToggleLabel();
@@ -604,18 +657,18 @@ function renderSidebar(){
     });
   });
 }
- 
+
 // ---------- fetching ----------
 function setStatus(id, cls){
   const el = document.getElementById(`status-${id}`);
   if(el){ el.className = 'status ' + cls; }
 }
- 
+
 function textOf(node, selector){
   const el = node.querySelector(selector);
   return el ? el.textContent.trim() : '';
 }
- 
+
 function parseFeedXML(xmlText, source){
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlText, 'text/xml');
@@ -642,25 +695,25 @@ function parseFeedXML(xmlText, source){
   }
   return items;
 }
- 
+
 // ---------- global request throttling ----------
 // Alex's own Cloudflare Worker — reliable, owned infrastructure, no rate-limit
 // roulette. The old free public relays are kept below purely as a last-resort
 // fallback in case the Worker itself is ever down, but should rarely be needed.
 const OWN_PROXY = 'https://monitoring-desk-proxy.alex-bacon.workers.dev/?url=';
- 
+
 async function fetchViaProxy(rawUrl){
   // append a cache-busting param so the target URL looks unique each call —
   // proxies can cache responses server-side, which can mask fresh headlines
   const bust = 'cb=' + Date.now();
   const url = rawUrl + (rawUrl.includes('?') ? '&' : '?') + bust;
- 
+
   const attempts = [
     OWN_PROXY + encodeURIComponent(url),
     'https://api.allorigins.win/raw?url=' + encodeURIComponent(url) + '&_=' + Date.now(),
     'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url) + '&_=' + Date.now(),
   ];
- 
+
   let lastErr;
   for(const p of attempts){
     const controller = new AbortController();
@@ -680,7 +733,7 @@ async function fetchViaProxy(rawUrl){
   }
   throw lastErr || new Error('all proxies failed');
 }
- 
+
 async function fetchSource(source){
   setStatus(source.id, 'loading');
   const urlEntries = Array.isArray(source.url) ? source.url : [source.url];
@@ -699,7 +752,7 @@ async function fetchSource(source){
   }));
   const items = results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
   const anySucceeded = results.some(r => r.status === 'fulfilled');
- 
+
   if(anySucceeded){
     // de-dupe by link, in case two feeds for the same source happen to both carry the same story
     const seen = new Set();
@@ -717,7 +770,7 @@ async function fetchSource(source){
     return sourceItemsCache[source.id] || [];
   }
 }
- 
+
 async function pullWire(){
   lastPullTime = Date.now();
   document.getElementById('refreshBtn').textContent = '↻ Pulling…';
@@ -727,25 +780,25 @@ async function pullWire(){
   allItems.sort((a,b) => b.date - a.date);
   document.getElementById('refreshBtn').textContent = '↻ Pull latest wire';
   document.getElementById('updatedLabel').textContent = 'updated ' + new Date().toLocaleTimeString('en-GB', {hour12:false});
- 
+
   const allFailedThisRound = SOURCES.length > 0 && SOURCES.every(s => document.getElementById(`status-${s.id}`)?.classList.contains('err'));
   if(allFailedThisRound && allItems.length === 0){
     showWarning('⚠ Every source failed to load. Don\'t worry, Alex is fixing it!');
   }
- 
+
   renderFeed();
 }
- 
+
 // ---------- rendering feed ----------
 function catColor(catId){
   const c = CATS.find(c => c.id === catId);
   return c ? c.color : '#8A93AC';
 }
- 
+
 const MAX_ITEM_AGE_HOURS = 72; // hide anything older than this from the main feed —
 // prevents stale fallback-cached items (from a source that's been down a while)
 // from silently piling up and cluttering the wire with old news
- 
+
 function renderFeed(){
   const query = document.getElementById('searchInput').value.trim().toLowerCase();
   const feedEl = document.getElementById('feed');
@@ -753,7 +806,7 @@ function renderFeed(){
   const notTooOld = allItems.filter(it => isNaN(it.date.getTime()) || it.date.getTime() >= cutoff);
   const visible = notTooOld.filter(it => selected.has(SOURCES.find(s => s.name === it.source)?.id || '__none__'));
   const filtered = query ? visible.filter(it => it.title.toLowerCase().includes(query)) : visible;
- 
+
   const newCount = visible.filter(it => sessionBaseline && it.date > sessionBaseline && !isNaN(it.date.getTime())).length;
   const sinceEl = document.getElementById('sinceLabel');
   if(sessionBaseline){
@@ -768,9 +821,9 @@ function renderFeed(){
     sinceEl.textContent = 'first visit — nothing to compare yet';
     sinceEl.className = 'since-label none';
   }
- 
+
   document.getElementById('countTag').textContent = `${filtered.length} headlines · ${selected.size} sources`;
- 
+
   if(!filtered.length){
     const allFailed = allItems.length === 0 && SOURCES.some(s => document.getElementById(`status-${s.id}`)?.classList.contains('err'));
     if(allFailed){
@@ -780,7 +833,7 @@ function renderFeed(){
     }
     return;
   }
- 
+
   feedEl.innerHTML = filtered.slice(0, 200).map(it => {
     const time = isNaN(it.date.getTime()) ? '' : it.date.toLocaleString('en-GB', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:false});
     const color = catColor(it.cat);
@@ -798,7 +851,7 @@ function renderFeed(){
     `;
   }).join('');
 }
- 
+
 // ---------- events ----------
 document.getElementById('selectAllBtn').addEventListener('click', () => {
   selected = new Set(SOURCES.map(s => s.id));
@@ -814,7 +867,7 @@ document.getElementById('selectNoneBtn').addEventListener('click', () => {
 });
 document.getElementById('searchInput').addEventListener('input', renderFeed);
 document.getElementById('refreshBtn').addEventListener('click', pullWire);
- 
+
 document.getElementById('mobileToggle').addEventListener('click', () => {
   document.getElementById('sidebar').classList.toggle('expanded');
   document.getElementById('mobileToggle').classList.toggle('expanded');
@@ -830,7 +883,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
   const name = nameInput.value.trim();
   const btn = document.getElementById('addBtn');
   const originalLabel = btn.textContent;
- 
+
   if(!url || !name){
     btn.textContent = '⚠ need URL and a label';
     btn.style.color = 'var(--wire-red)';
@@ -845,7 +898,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
     setTimeout(() => { btn.textContent = originalLabel; btn.style.color = ''; btn.style.borderColor = ''; }, 2500);
     return;
   }
- 
+
   const id = 'custom-' + Date.now();
   const src = {id, name, url, cat:'wire', custom:true};
   SOURCES.push(src);
@@ -855,7 +908,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
   renderSidebar();
   saveCustom();
   savePrefs();
- 
+
   btn.textContent = '✓ added — fetching…';
   setStatus(id, 'loading');
   try{
@@ -869,7 +922,7 @@ document.getElementById('addBtn').addEventListener('click', async () => {
   }
   setTimeout(() => { btn.textContent = originalLabel; }, 3500);
 });
- 
+
 // ---------- diagnostics ----------
 function showWarning(text){
   document.getElementById('warningText').textContent = text;
@@ -889,9 +942,68 @@ function checkStorageWorks(){
     return false;
   }
 }
- 
+
+// ---------- sidebar resize ----------
+const MIN_SIDEBAR_WIDTH = 180;
+const MAX_SIDEBAR_WIDTH = 420;
+function setSidebarWidth(px){
+  const clamped = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, px));
+  document.documentElement.style.setProperty('--sidebar-width', clamped + 'px');
+  return clamped;
+}
+function initSidebarWidth(){
+  try{
+    const saved = localStorage.getItem('wire-desk-sidebar-width');
+    if(saved) setSidebarWidth(parseInt(saved, 10));
+  }catch(e){}
+}
+(function setupResizeHandle(){
+  const handle = document.getElementById('resizeHandle');
+  let dragging = false;
+  handle.addEventListener('mousedown', e => {
+    dragging = true;
+    handle.classList.add('dragging');
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', e => {
+    if(!dragging) return;
+    const layoutRect = document.querySelector('.layout').getBoundingClientRect();
+    setSidebarWidth(e.clientX - layoutRect.left);
+  });
+  window.addEventListener('mouseup', () => {
+    if(!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.userSelect = '';
+    try{
+      const current = getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width').trim();
+      localStorage.setItem('wire-desk-sidebar-width', parseInt(current, 10));
+    }catch(e){}
+  });
+})();
+
+// ---------- theme ----------
+function applyTheme(theme){
+  document.documentElement.setAttribute('data-theme', theme);
+  document.getElementById('themeToggle').textContent = theme === 'light' ? '☀️' : '🌙';
+}
+function initTheme(){
+  let saved = 'dark';
+  try{ saved = localStorage.getItem('wire-desk-theme') || 'dark'; }catch(e){}
+  applyTheme(saved);
+}
+document.getElementById('themeToggle').addEventListener('click', () => {
+  const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+  const next = current === 'light' ? 'dark' : 'light';
+  applyTheme(next);
+  try{ localStorage.setItem('wire-desk-theme', next); }catch(e){}
+});
+
 // ---------- init ----------
 (async function init(){
+  initTheme();
+  initSidebarWidth();
   if(!checkStorageWorks()){
     showWarning('⚠ This browser is blocking saved data, so some settings won\'t be remembered between visits. Don\'t worry, Alex is on it!');
   }
@@ -900,7 +1012,7 @@ function checkStorageWorks(){
   renderSidebar();
   await pullWire();
   setInterval(pullWire, 5 * 60 * 1000); // auto-refresh every 5 minutes while tab is active
- 
+
   // background tabs get throttled/frozen by the browser, so the interval above can silently
   // stop firing — catch up whenever the tab becomes visible/focused again instead
   function refreshIfStale(){
@@ -924,4 +1036,3 @@ function checkStorageWorks(){
 </script>
 </body>
 </html>
- 
