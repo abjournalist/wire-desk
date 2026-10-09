@@ -25,13 +25,13 @@
     --ink:#F7F4EC;
     --panel:#EFEAE0;
     --panel-2:#EFEAE079;
-    --paper:#1F1E1B;
+    --paper:#17140F;
     --brass:#0B3D91;
-    --wire-red:#A63D40;
-    --teal:#3F726D;
-    --slate:#6B7280;
-    --muted:#8A8370;
-    --hairline:#E3DDCC;
+    --wire-red:#8A2E30;
+    --teal:#2F5652;
+    --slate:#565D68;
+    --muted:#5C5648;
+    --hairline:#D8D0BC;
   }
   body{transition:background 0.2s ease, color 0.2s ease;}
   *{box-sizing:border-box;}
@@ -406,6 +406,7 @@
     color:var(--muted);
     line-height:1.6;
   }
+  html[data-theme="light"] .entry-meta{font-weight:600;}
   .entry-meta .src-tag{
     display:inline-flex;
     align-items:center;
@@ -422,6 +423,7 @@
     text-decoration:none;
     border-bottom:1px solid transparent;
   }
+  html[data-theme="light"] .entry-title a{font-weight:600;}
   .entry-title a:hover{border-bottom-color:var(--brass);color:var(--brass);}
 
   .empty-state, .init-state{
@@ -518,6 +520,7 @@ const CATS = [
 let SOURCES = [
   {id:'cma', name:'CMA (gov.uk)', url:'https://www.gov.uk/government/organisations/competition-and-markets-authority.atom', cat:'reg'},
   {id:'ofcom', name:'Ofcom', url:['https://www.gov.uk/government/organisations/ofcom.atom', 'https://news.google.com/rss/search?q=site:ofcom.org.uk+when:30d&hl=en-US&gl=US&ceid=US:en', 'https://kill-the-newsletter.com/feeds/8wb93jthb6p70y9vohkx.xml'], cat:'reg'},
+  {id:'ico', name:'ICO', url:'https://kill-the-newsletter.com/feeds/5smz5pekx8xgd7exyfft3y8wgh4ozgkk69gt2gpu.xml', cat:'reg'},
   {id:'boe', name:'Bank of England', url:'https://www.bankofengland.co.uk/rss/news', cat:'mkt'},
   {id:'bbc-econ', name:'BBC Economy', url:'https://feeds.bbci.co.uk/news/business/economy/rss.xml', cat:'mkt'},
   {id:'cityam', name:'City AM', url:'https://www.cityam.com/feed/', cat:'mkt'},
@@ -540,7 +543,6 @@ let SOURCES = [
     'https://www.bloomberg.com/authors/AW6xtbTD-gc/jacob-reid.rss',
     'https://www.bloomberg.com/authors/AWY9PNBczAI/maddie-parker.rss',
     'https://www.bloomberg.com/authors/AWTeEfv10w8/kate-duffy.rss',
-    'https://www.bloomberg.com/authors/AVcbFaoiSa4/jillian-deutsch.rss',
     'https://www.bloomberg.com/authors/AThxRyFAp60/will-mathis.rss',
     {url:'https://www.bloomberg.com/authors/AWANKk-wMdw/mitchell-ferman.rss', filter:['BP','Shell']}
   ], cat:'wire'},
