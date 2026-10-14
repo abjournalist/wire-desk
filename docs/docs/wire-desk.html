@@ -518,7 +518,7 @@ const CATS = [
 
 let SOURCES = [
   {id:'cma', name:'CMA (gov.uk)', url:'https://www.gov.uk/government/organisations/competition-and-markets-authority.atom', cat:'reg'},
-  {id:'ofcom', name:'Ofcom', url:['https://www.gov.uk/government/organisations/ofcom.atom', 'https://news.google.com/rss/search?q=site:ofcom.org.uk+when:30d&hl=en-US&gl=US&ceid=US:en', 'https://kill-the-newsletter.com/feeds/8wb93jthb6p70y9vohkx.xml'], cat:'reg'},
+  {id:'ofcom', name:'Ofcom', url:['https://www.gov.uk/government/organisations/ofcom.atom', 'https://news.google.com/rss/search?q=site:ofcom.org.uk+when:30d&hl=en-US&gl=US&ceid=US:en', 'https://kill-the-newsletter.com/feeds/8wb93jthb6p70y9vohkx.xml', 'https://kill-the-newsletter.com/feeds/0bhc1bq0xcfnh7k88obtuoc26pg2j5rwyxgrpkuv.xml'], cat:'reg'},
   {id:'ico', name:'ICO', url:'https://kill-the-newsletter.com/feeds/5smz5pekx8xgd7exyfft3y8wgh4ozgkk69gt2gpu.xml', cat:'reg'},
   {id:'boe', name:'Bank of England', url:'https://www.bankofengland.co.uk/rss/news', cat:'mkt'},
   {id:'bbc-econ', name:'BBC Economy', url:'https://feeds.bbci.co.uk/news/business/economy/rss.xml', cat:'mkt'},
@@ -526,7 +526,7 @@ let SOURCES = [
   {id:'ft-companies', name:'FT Companies', url:'https://www.ft.com/companies?format=rss', cat:'mkt'},
   {id:'bbc-tech', name:'BBC Technology', url:'https://feeds.bbci.co.uk/news/technology/rss.xml', cat:'tech'},
   {id:'gu-tech', name:'Guardian Technology', url:'https://www.theguardian.com/uk/technology/rss', cat:'tech'},
-  {id:'aisi', name:'AI Security Institute', url:['https://www.gov.uk/government/organisations/ai-security-institute.atom', 'https://news.google.com/rss/search?q=site:aisi.gov.uk/blog&hl=en-US&gl=US&ceid=US:en'], cat:'tech'},
+  {id:'aisi', name:'AI Security Institute', url:['https://www.gov.uk/government/organisations/ai-security-institute.atom', {url:'https://www.aisi.gov.uk/blog', scrape:{prefix:'/blog/'}}], cat:'tech'},
   {id:'bbc-biz', name:'BBC Business', url:'https://feeds.bbci.co.uk/news/business/rss.xml', cat:'wire'},
   {id:'gu-biz', name:'Guardian Business', url:'https://www.theguardian.com/uk/business/rss', cat:'wire'},
   {id:'sky-biz', name:'Sky News Business', url:'https://feeds.skynews.com/feeds/rss/business.xml', cat:'wire'},
@@ -735,6 +735,49 @@ async function fetchViaProxy(rawUrl){
   throw lastErr || new Error('all proxies failed');
 }
 
+// ---------- page scraping (for sites with no RSS feed) ----------
+// Reads a listing page (e.g. a blog index) and builds headline items from it.
+// Finds every link to /<prefix>/<slug>, climbs to that link's "card", then takes
+// the card's heading as the title and the first "Mon D, YYYY" date it contains.
+function parseScrapedHTML(html, source, pageUrl, cfg){
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const prefix = cfg.prefix;
+  const origin = new URL(pageUrl).origin;
+  const dateRe = /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}\b/i;
+  const postHref = a => {
+    try{
+      const u = new URL(a.getAttribute('href') || '', origin);
+      if(u.origin !== origin || !u.pathname.startsWith(prefix)) return null;
+      const slug = u.pathname.slice(prefix.length).replace(/\/$/, '');
+      if(!slug || slug.includes('/')) return null;
+      return u.origin + u.pathname;
+    }catch(e){ return null; }
+  };
+  const countPosts = el => new Set([...el.querySelectorAll('a[href]')].map(postHref).filter(Boolean)).size;
+  const items = [];
+  const seen = new Set();
+  for(const a of doc.querySelectorAll('a[href]')){
+    const link = postHref(a);
+    if(!link || seen.has(link)) continue;
+    let card = a;
+    while(card.parentElement && card.parentElement !== doc.body && countPosts(card.parentElement) <= 1){
+      card = card.parentElement;
+    }
+    const heading = card.querySelector('h1,h2,h3,h4,h5,h6');
+    const title = ((heading && heading.textContent) || a.textContent || '').replace(/\s+/g, ' ').trim();
+    if(!title || /^read post$/i.test(title)) continue;
+    // strip tags to spaces (not textContent) so minified markup can't glue words/dates together
+    const cardText = (card.innerHTML || '').replace(/<[^>]*>/g, ' ');
+    const m = cardText.match(dateRe);
+    const date = m ? new Date(m[0].replace(/\s+/g, ' ')) : null;
+    if(!date || isNaN(date.getTime())) continue;
+    seen.add(link);
+    items.push({title, link, date, source: source.name, cat: source.cat});
+    if(items.length >= 40) break;
+  }
+  return items;
+}
+
 async function fetchSource(source){
   setStatus(source.id, 'loading');
   const urlEntries = Array.isArray(source.url) ? source.url : [source.url];
@@ -744,7 +787,9 @@ async function fetchSource(source){
     const u = typeof entry === 'string' ? entry : entry.url;
     const filterWords = (typeof entry === 'object' && entry.filter) ? entry.filter : null;
     const xml = await fetchViaProxy(u);
-    let items = parseFeedXML(xml, source);
+    let items = (typeof entry === 'object' && entry.scrape)
+      ? parseScrapedHTML(xml, source, u, entry.scrape)
+      : parseFeedXML(xml, source);
     if(filterWords && filterWords.length){
       const lowered = filterWords.map(w => w.toLowerCase());
       items = items.filter(it => lowered.some(w => it.title.toLowerCase().includes(w)));
