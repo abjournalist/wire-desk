@@ -357,6 +357,32 @@
   }
   .search-box input::placeholder{color:var(--muted);}
   .search-box svg{flex:none;opacity:0.5;}
+  .unseen-badge{
+    font-family:var(--mono);
+    font-size:9px;
+    font-weight:700;
+    letter-spacing:0.5px;
+    background:var(--brass);
+    color:var(--ink);
+    border-radius:9px;
+    padding:1px 6px;
+    margin-left:6px;
+    cursor:pointer;
+    flex:none;
+    line-height:1.5;
+  }
+  .unseen-badge.active{outline:2px solid var(--paper); outline-offset:1px;}
+  .focus-chip{
+    font-family:var(--mono);
+    font-size:11px;
+    color:var(--brass);
+    border:1px solid var(--brass);
+    border-radius:10px;
+    padding:2px 10px;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .focus-chip:hover{background:var(--brass); color:var(--ink);}
   .count-tag{
     font-family:var(--mono);
     font-size:11px;
@@ -496,6 +522,7 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8A93AC" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <input type="text" id="searchInput" placeholder="Filter headlines — e.g. CMA, Google, tariffs, AI…">
       </div>
+      <span class="focus-chip" id="focusChip" style="display:none" title="Click to show all sources again"></span>
       <div class="count-tag" id="countTag">loading…</div>
     </div>
     <div class="feed" id="feed">
@@ -519,6 +546,7 @@ const CATS = [
 let SOURCES = [
   {id:'cma', name:'CMA (gov.uk)', url:'https://www.gov.uk/government/organisations/competition-and-markets-authority.atom', cat:'reg'},
   {id:'ofcom', name:'Ofcom', url:['https://www.gov.uk/government/organisations/ofcom.atom', 'https://news.google.com/rss/search?q=site:ofcom.org.uk+when:30d&hl=en-US&gl=US&ceid=US:en', 'https://kill-the-newsletter.com/feeds/8wb93jthb6p70y9vohkx.xml', 'https://kill-the-newsletter.com/feeds/0bhc1bq0xcfnh7k88obtuoc26pg2j5rwyxgrpkuv.xml'], cat:'reg'},
+  {id:'dpc', name:'DPC (Ireland)', url:{url:'https://www.dataprotection.ie/en/news-media/latest-news', scrape:{prefix:'/en/news-media/latest-news/'}}, cat:'reg'},
   {id:'ico', name:'ICO', url:'https://kill-the-newsletter.com/feeds/5smz5pekx8xgd7exyfft3y8wgh4ozgkk69gt2gpu.xml', cat:'reg'},
   {id:'boe', name:'Bank of England', url:'https://www.bankofengland.co.uk/rss/news', cat:'mkt'},
   {id:'bbc-econ', name:'BBC Economy', url:'https://feeds.bbci.co.uk/news/business/economy/rss.xml', cat:'mkt'},
@@ -546,6 +574,7 @@ let SOURCES = [
     {url:'https://www.bloomberg.com/authors/AWANKk-wMdw/mitchell-ferman.rss', filter:['BP','Shell']}
   ], cat:'wire'},
   {id:'google-uk', name:'Google UK', url:'https://blog.google/company-news/inside-google/around-the-globe/google-europe/united-kingdom/rss/', cat:'companies'},
+  {id:'astrazeneca', name:'AstraZeneca', url:{url:'https://www.astrazeneca.com/media-centre.html', scrape:{prefix:'/media-centre/press-releases/', nested:true}}, cat:'companies'},
   {id:'bp-press', name:'BP', url:'https://kill-the-newsletter.com/feeds/mrldqfzeq5kl5vlv2vlo.xml', cat:'companies'},
   {id:'revolut', name:'Revolut', url:'https://kill-the-newsletter.com/feeds/6roa06d1ragwxb2g5f8k.xml', cat:'companies'},
 ];
@@ -557,6 +586,9 @@ let lastPullTime = 0;
 let sourceItemsCache = {}; // source.id -> last successfully fetched items, used as fallback on transient failures
 
 // ---------- persistence (real browser localStorage — this runs as a normal hosted page) ----------
+let seenStore = {};          // link -> time first loaded, for items that only carry a date (no time)
+let seenAtStart = new Set();  // snapshot taken when the page opens, so 'new' stays stable all session
+let focusSourceId = null;     // when set, the feed shows only this source
 let sessionBaseline = null; // timestamp of the previous visit, used to flag "new" items this session
 
 function loadPrefs(){
@@ -589,6 +621,8 @@ function initLastVisit(){
   try{
     const stored = localStorage.getItem('wire-desk-last-visit');
     sessionBaseline = stored ? new Date(stored) : null;
+    try{ seenStore = JSON.parse(localStorage.getItem('wire-desk-seen') || '{}') || {}; }catch(e){ seenStore = {}; }
+    seenAtStart = new Set(Object.keys(seenStore));
     // note: we deliberately do NOT overwrite the stored timestamp here.
     // if we did, opening a second tab would immediately reset the baseline
     // out from under the first tab. instead we advance it only when this
@@ -597,6 +631,23 @@ function initLastVisit(){
 }
 function markVisitEnd(){
   try{ localStorage.setItem('wire-desk-last-visit', new Date().toISOString()); }catch(e){}
+  try{
+    // date-only items (e.g. AISI posts, which carry no publish time) are tracked by link rather than by time
+    const now = Date.now();
+    allItems.forEach(it => { if(it.dateOnly && !seenStore[it.link]) seenStore[it.link] = now; });
+    const keys = Object.keys(seenStore);
+    if(keys.length > 600){
+      keys.sort((a, b) => seenStore[a] - seenStore[b]).slice(0, keys.length - 600).forEach(k => delete seenStore[k]);
+    }
+    localStorage.setItem('wire-desk-seen', JSON.stringify(seenStore));
+  }catch(e){}
+}
+// "new" = not seen on a previous visit. Normal feed items compare their publish time with your last visit;
+// date-only items compare by link, because a bare date can't be placed relative to a visit time.
+function isNewItem(it){
+  if(!sessionBaseline || isNaN(it.date.getTime())) return false;
+  if(it.dateOnly) return !seenAtStart.has(it.link);
+  return it.date > sessionBaseline;
 }
 
 // ---------- clock ----------
@@ -627,6 +678,7 @@ function renderSidebar(){
       row.innerHTML = `
         <input type="checkbox" data-id="${s.id}" ${selected.has(s.id) ? 'checked' : ''}>
         <span>${s.name}</span>
+        <span class="unseen-badge" id="unseen-${s.id}" data-focus-id="${s.id}" title="New since your last visit — click to show only these" style="display:none"></span>
         ${s.custom ? `<span class="remove-btn" data-remove-id="${s.id}" title="remove this source">✕</span>` : ''}
         <span class="status" id="status-${s.id}"></span>
       `;
@@ -643,6 +695,13 @@ function renderSidebar(){
       renderFeed();
     });
   });
+  container.querySelectorAll('.unseen-badge').forEach(b => {
+    b.addEventListener('click', e => {
+      e.preventDefault();      // the row is a <label>; don't let this tick/untick the checkbox
+      e.stopPropagation();
+      setFocusSource(b.dataset.focusId);
+    });
+  });
   container.querySelectorAll('.remove-btn').forEach(btn => {
     btn.addEventListener('click', e => {
       e.preventDefault();
@@ -657,6 +716,7 @@ function renderSidebar(){
       renderFeed();
     });
   });
+  updateUnseenBadges();
 }
 
 // ---------- fetching ----------
@@ -736,20 +796,40 @@ async function fetchViaProxy(rawUrl){
 }
 
 // ---------- page scraping (for sites with no RSS feed) ----------
-// Reads a listing page (e.g. a blog index) and builds headline items from it.
-// Finds every link to /<prefix>/<slug>, climbs to that link's "card", then takes
-// the card's heading as the title and the first "Mon D, YYYY" date it contains.
+// Reads a listing page (e.g. a blog index or newsroom) and builds headline items.
+// Finds every link under cfg.prefix, climbs to that link's "card", then takes the
+// card's heading (or the link text) as the title and the first date it contains.
+// Dates may be "Oct 12, 2026" or "12 October 2026". cfg.nested:true also accepts
+// links one folder deeper (e.g. /press-releases/2026/some-story.html).
+const MONTHS = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+const DATE_RES = [
+  /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})\b/i,   // Oct 12, 2026
+  /\b(\d{1,2})(?:st|nd|rd|th)?\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?,?\s+(\d{4})\b/i    // 12 October 2026 / 01st October 2026
+];
+function findDate(text){
+  let best = null;
+  DATE_RES.forEach((re, i) => {
+    const m = text.match(re);
+    if(!m || (best && m.index >= best.index)) return;      // earliest date in the text wins
+    const mon = (i === 0 ? m[1] : m[2]).slice(0,3).toLowerCase();
+    const day = parseInt(i === 0 ? m[2] : m[1], 10);
+    const d = new Date(parseInt(m[3], 10), MONTHS[mon], day, 12, 0, 0); // noon, so same-day items aren't treated as older than a morning visit
+    if(!isNaN(d.getTime())) best = {date: d, matched: m[0], index: m.index};
+  });
+  return best;
+}
 function parseScrapedHTML(html, source, pageUrl, cfg){
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const prefix = cfg.prefix;
   const origin = new URL(pageUrl).origin;
-  const dateRe = /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}\b/i;
+  const host = new URL(pageUrl).hostname.replace(/^www\./, '');   // www / non-www treated as the same site
   const postHref = a => {
     try{
       const u = new URL(a.getAttribute('href') || '', origin);
-      if(u.origin !== origin || !u.pathname.startsWith(prefix)) return null;
+      if(u.hostname.replace(/^www\./, '') !== host || !u.pathname.startsWith(prefix)) return null;
       const slug = u.pathname.slice(prefix.length).replace(/\/$/, '');
-      if(!slug || slug.includes('/')) return null;
+      if(!slug) return null;
+      if(slug.includes('/') && !cfg.nested) return null;
       return u.origin + u.pathname;
     }catch(e){ return null; }
   };
@@ -763,16 +843,17 @@ function parseScrapedHTML(html, source, pageUrl, cfg){
     while(card.parentElement && card.parentElement !== doc.body && countPosts(card.parentElement) <= 1){
       card = card.parentElement;
     }
-    const heading = card.querySelector('h1,h2,h3,h4,h5,h6');
-    const title = ((heading && heading.textContent) || a.textContent || '').replace(/\s+/g, ' ').trim();
-    if(!title || /^read post$/i.test(title)) continue;
     // strip tags to spaces (not textContent) so minified markup can't glue words/dates together
     const cardText = (card.innerHTML || '').replace(/<[^>]*>/g, ' ');
-    const m = cardText.match(dateRe);
-    const date = m ? new Date(m[0].replace(/\s+/g, ' ')) : null;
-    if(!date || isNaN(date.getTime())) continue;
+    const found = findDate(cardText);
+    if(!found) continue;
+    const heading = card.querySelector('h1,h2,h3,h4,h5,h6');
+    let title = ((heading && heading.textContent) || a.textContent || '').replace(/\s+/g, ' ').trim();
+    // some sites put the date inside the link text itself — remove it from the title
+    title = title.replace(found.matched, '').replace(/\s+/g, ' ').trim();
+    if(!title || /^read (post|more)$/i.test(title)) continue;
     seen.add(link);
-    items.push({title, link, date, source: source.name, cat: source.cat});
+    items.push({title, link, date: found.date, dateOnly: true, source: source.name, cat: source.cat});
     if(items.length >= 40) break;
   }
   return items;
@@ -841,6 +922,30 @@ function catColor(catId){
   return c ? c.color : '#8A93AC';
 }
 
+function sourceIdOf(item){ return SOURCES.find(s => s.name === item.source)?.id; }
+function updateUnseenBadges(){
+  const cutoff = Date.now() - MAX_ITEM_AGE_HOURS * 60 * 60 * 1000;
+  const counts = {};
+  allItems.forEach(it => {
+    if(!isNaN(it.date.getTime()) && it.date.getTime() < cutoff) return;
+    if(!isNewItem(it)) return;
+    const id = sourceIdOf(it);
+    if(id) counts[id] = (counts[id] || 0) + 1;
+  });
+  SOURCES.forEach(s => {
+    const el = document.getElementById('unseen-' + s.id);
+    if(!el) return;
+    const n = selected.has(s.id) ? (counts[s.id] || 0) : 0;
+    el.textContent = n || '';
+    el.style.display = n ? 'inline-block' : 'none';
+    el.classList.toggle('active', focusSourceId === s.id);
+  });
+}
+function setFocusSource(id){
+  focusSourceId = (focusSourceId === id) ? null : id;
+  renderFeed();
+}
+
 const MAX_ITEM_AGE_HOURS = 72; // hide anything older than this from the main feed —
 // prevents stale fallback-cached items (from a source that's been down a while)
 // from silently piling up and cluttering the wire with old news
@@ -851,9 +956,11 @@ function renderFeed(){
   const cutoff = Date.now() - MAX_ITEM_AGE_HOURS * 60 * 60 * 1000;
   const notTooOld = allItems.filter(it => isNaN(it.date.getTime()) || it.date.getTime() >= cutoff);
   const visible = notTooOld.filter(it => selected.has(SOURCES.find(s => s.name === it.source)?.id || '__none__'));
-  const filtered = query ? visible.filter(it => it.title.toLowerCase().includes(query)) : visible;
+  if(focusSourceId && (!SOURCES.find(s => s.id === focusSourceId) || !selected.has(focusSourceId))) focusSourceId = null;
+  const scoped = focusSourceId ? visible.filter(it => sourceIdOf(it) === focusSourceId) : visible;
+  const filtered = query ? scoped.filter(it => it.title.toLowerCase().includes(query)) : scoped;
 
-  const newCount = visible.filter(it => sessionBaseline && it.date > sessionBaseline && !isNaN(it.date.getTime())).length;
+  const newCount = visible.filter(isNewItem).length;
   const sinceEl = document.getElementById('sinceLabel');
   if(sessionBaseline){
     if(newCount > 0){
@@ -869,6 +976,14 @@ function renderFeed(){
   }
 
   document.getElementById('countTag').textContent = `${filtered.length} headlines · ${selected.size} sources`;
+  const chip = document.getElementById('focusChip');
+  if(focusSourceId){
+    chip.textContent = `Only ${SOURCES.find(s => s.id === focusSourceId).name} ✕`;
+    chip.style.display = 'inline-block';
+  } else {
+    chip.style.display = 'none';
+  }
+  updateUnseenBadges();
 
   if(!filtered.length){
     const allFailed = allItems.length === 0 && SOURCES.some(s => document.getElementById(`status-${s.id}`)?.classList.contains('err'));
@@ -883,7 +998,7 @@ function renderFeed(){
   feedEl.innerHTML = filtered.slice(0, 200).map(it => {
     const time = isNaN(it.date.getTime()) ? '' : it.date.toLocaleString('en-GB', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:false});
     const color = catColor(it.cat);
-    const isNew = sessionBaseline && it.date > sessionBaseline && !isNaN(it.date.getTime());
+    const isNew = isNewItem(it);
     return `
       <div class="entry ${isNew ? 'is-new' : ''}">
         <div class="entry-meta">
@@ -913,6 +1028,7 @@ document.getElementById('selectNoneBtn').addEventListener('click', () => {
 });
 document.getElementById('searchInput').addEventListener('input', renderFeed);
 document.getElementById('refreshBtn').addEventListener('click', pullWire);
+document.getElementById('focusChip').addEventListener('click', () => { focusSourceId = null; renderFeed(); });
 
 document.getElementById('mobileToggle').addEventListener('click', () => {
   document.getElementById('sidebar').classList.toggle('expanded');
@@ -1069,15 +1185,18 @@ document.getElementById('themeToggle').addEventListener('click', () => {
     if(document.visibilityState === 'hidden') markVisitEnd();
   });
   window.addEventListener('focus', refreshIfStale);
-  window.addEventListener('beforeunload', markVisitEnd);
+  // only record a visit when the page was actually on screen: a tab left open in the background
+  // overnight must not mark overnight posts (e.g. AISI's 00:00 releases) as already seen
+  const markIfViewing = () => { if(document.visibilityState === 'visible') markVisitEnd(); };
+  window.addEventListener('beforeunload', markIfViewing);
   // pagehide fires far more reliably than beforeunload on mobile browsers
   // (especially iOS Safari), which is where the 'since last visit' tracking
   // was most likely to silently never save
-  window.addEventListener('pagehide', markVisitEnd);
+  window.addEventListener('pagehide', markIfViewing);
   // safety net: even if no leave-event ever fires (e.g. the app gets force-quit
   // rather than closed cleanly), periodically checkpoint the timestamp so the
   // next visit still has something recent to compare against, not nothing
-  setInterval(markVisitEnd, 3 * 60 * 1000);
+  setInterval(markIfViewing, 3 * 60 * 1000);
 })();
 </script>
 </body>
