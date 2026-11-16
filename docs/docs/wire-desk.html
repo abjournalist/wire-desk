@@ -782,7 +782,9 @@ function findDate(text){
     if(!m || (best && m.index >= best.index)) return;      // earliest date in the text wins
     const mon = (i === 0 ? m[1] : m[2]).slice(0,3).toLowerCase();
     const day = parseInt(i === 0 ? m[2] : m[1], 10);
-    const d = new Date(parseInt(m[3], 10), MONTHS[mon], day, 12, 0, 0); // noon, so same-day items aren't treated as older than a morning visit
+    // a bare date has no time, so place it at the START of that day: it sorts below anything with a real
+    // publish time that day instead of leaping above them (newness is tracked by link, not by this timestamp)
+    const d = new Date(parseInt(m[3], 10), MONTHS[mon], day, 0, 0, 0);
     if(!isNaN(d.getTime())) best = {date: d, matched: m[0], index: m.index};
   });
   return best;
@@ -965,7 +967,10 @@ function renderFeed(){
   }
 
   feedEl.innerHTML = filtered.slice(0, 200).map(it => {
-    const time = isNaN(it.date.getTime()) ? '' : it.date.toLocaleString('en-GB', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:false});
+    // date-only items show just the date: showing a time would be made up
+    const time = isNaN(it.date.getTime()) ? '' : it.dateOnly
+      ? it.date.toLocaleString('en-GB', {day:'2-digit', month:'short'})
+      : it.date.toLocaleString('en-GB', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit', hour12:false});
     const color = catColor(it.cat);
     const isNew = isNewItem(it);
     return `
