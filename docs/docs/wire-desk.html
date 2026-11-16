@@ -21,19 +21,6 @@
     --mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
     --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
-  html[data-theme="light"]{
-    --ink:#F7F4EC;
-    --panel:#EFEAE0;
-    --panel-2:#EFEAE079;
-    --paper:#201C16;
-    --brass:#0B3D91;
-    --wire-red:#9A3436;
-    --teal:#386560;
-    --slate:#60666F;
-    --muted:#6F6857;
-    --hairline:#DED7C5;
-  }
-  body{transition:background 0.2s ease, color 0.2s ease;}
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
@@ -285,20 +272,6 @@
     transition:background 0.15s, color 0.15s;
   }
   .refresh-btn:hover{background:var(--brass);color:var(--ink);}
-  #themeToggle{
-    background:none;
-    border:1px solid var(--hairline);
-    border-radius:4px;
-    width:32px;
-    height:32px;
-    font-size:15px;
-    cursor:pointer;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    transition:border-color 0.15s;
-  }
-  #themeToggle:hover{border-color:var(--brass);}
   .add-feed{margin-top:14px;}
   .add-feed input{
     width:100%;
@@ -448,7 +421,6 @@
     text-decoration:none;
     border-bottom:1px solid transparent;
   }
-  html[data-theme="light"] .entry-title a{-webkit-text-stroke:0.25px currentColor;}
   .entry-title a:hover{border-bottom-color:var(--brass);color:var(--brass);}
 
   .empty-state, .init-state{
@@ -482,13 +454,10 @@
     <h1>Monitoring Desk</h1>
     <span class="kicker">UK Business &amp; Economics</span>
   </div>
-  <div style="display:flex; align-items:center; gap:16px;">
-    <button id="themeToggle" type="button" title="Switch theme">🌙</button>
-    <div class="clock-block">
-      <div id="clock" class="time">--:--:--</div>
-      <div id="updatedLabel">not yet updated</div>
-      <div id="sinceLabel" class="since-label"></div>
-    </div>
+  <div class="clock-block">
+    <div id="clock" class="time">--:--:--</div>
+    <div id="updatedLabel">not yet updated</div>
+    <div id="sinceLabel" class="since-label"></div>
   </div>
 </div>
 
@@ -545,16 +514,16 @@ const CATS = [
 
 let SOURCES = [
   {id:'cma', name:'CMA (gov.uk)', url:'https://www.gov.uk/government/organisations/competition-and-markets-authority.atom', cat:'reg'},
-  {id:'ofcom', name:'Ofcom', url:['https://www.gov.uk/government/organisations/ofcom.atom', 'https://news.google.com/rss/search?q=site:ofcom.org.uk+when:30d&hl=en-US&gl=US&ceid=US:en', 'https://kill-the-newsletter.com/feeds/8wb93jthb6p70y9vohkx.xml', 'https://kill-the-newsletter.com/feeds/0bhc1bq0xcfnh7k88obtuoc26pg2j5rwyxgrpkuv.xml'], cat:'reg'},
-  {id:'dpc', name:'DPC (Ireland)', url:{url:'https://www.dataprotection.ie/en/news-media/latest-news', scrape:{prefix:'/en/news-media/latest-news/'}}, cat:'reg'},
-  {id:'ico', name:'ICO', url:'https://kill-the-newsletter.com/feeds/5smz5pekx8xgd7exyfft3y8wgh4ozgkk69gt2gpu.xml', cat:'reg'},
+  {id:'ofcom', name:'Ofcom', url:['https://www.gov.uk/government/organisations/ofcom.atom', 'https://news.google.com/rss/search?q=site:ofcom.org.uk+when:30d&hl=en-US&gl=US&ceid=US:en', 'https://kill-the-newsletter.com/feeds/8wb93jthb6p70y9vohkx.xml', 'https://kill-the-newsletter.com/feeds/0bhc1bq0xcfnh7k88obtuoc26pg2j5rwyxgrpkuv.xml'], badge:true, cat:'reg'},
+  {id:'dpc', name:'DPC (Ireland)', url:{url:'https://www.dataprotection.ie/en/news-media/latest-news', scrape:{prefix:'/en/news-media/latest-news/'}}, badge:true, cat:'reg'},
+  {id:'ico', name:'ICO', url:'https://kill-the-newsletter.com/feeds/5smz5pekx8xgd7exyfft3y8wgh4ozgkk69gt2gpu.xml', badge:true, cat:'reg'},
   {id:'boe', name:'Bank of England', url:'https://www.bankofengland.co.uk/rss/news', cat:'mkt'},
   {id:'bbc-econ', name:'BBC Economy', url:'https://feeds.bbci.co.uk/news/business/economy/rss.xml', cat:'mkt'},
   {id:'cityam', name:'City AM', url:'https://www.cityam.com/feed/', cat:'mkt'},
   {id:'ft-companies', name:'FT Companies', url:'https://www.ft.com/companies?format=rss', cat:'mkt'},
   {id:'bbc-tech', name:'BBC Technology', url:'https://feeds.bbci.co.uk/news/technology/rss.xml', cat:'tech'},
   {id:'gu-tech', name:'Guardian Technology', url:'https://www.theguardian.com/uk/technology/rss', cat:'tech'},
-  {id:'aisi', name:'AI Security Institute', url:['https://www.gov.uk/government/organisations/ai-security-institute.atom', {url:'https://www.aisi.gov.uk/blog', scrape:{prefix:'/blog/'}}], cat:'tech'},
+  {id:'aisi', name:'AI Security Institute', url:['https://www.gov.uk/government/organisations/ai-security-institute.atom', {url:'https://www.aisi.gov.uk/blog', scrape:{prefix:'/blog/'}}], badge:true, cat:'tech'},
   {id:'bbc-biz', name:'BBC Business', url:'https://feeds.bbci.co.uk/news/business/rss.xml', cat:'wire'},
   {id:'gu-biz', name:'Guardian Business', url:'https://www.theguardian.com/uk/business/rss', cat:'wire'},
   {id:'sky-biz', name:'Sky News Business', url:'https://feeds.skynews.com/feeds/rss/business.xml', cat:'wire'},
@@ -678,7 +647,7 @@ function renderSidebar(){
       row.innerHTML = `
         <input type="checkbox" data-id="${s.id}" ${selected.has(s.id) ? 'checked' : ''}>
         <span>${s.name}</span>
-        <span class="unseen-badge" id="unseen-${s.id}" data-focus-id="${s.id}" title="New since your last visit — click to show only these" style="display:none"></span>
+        ${s.badge ? `<span class="unseen-badge" id="unseen-${s.id}" data-focus-id="${s.id}" title="New since your last visit — click to show only these" style="display:none"></span>` : ''}
         ${s.custom ? `<span class="remove-btn" data-remove-id="${s.id}" title="remove this source">✕</span>` : ''}
         <span class="status" id="status-${s.id}"></span>
       `;
@@ -1145,26 +1114,8 @@ function initSidebarWidth(){
   });
 })();
 
-// ---------- theme ----------
-function applyTheme(theme){
-  document.documentElement.setAttribute('data-theme', theme);
-  document.getElementById('themeToggle').textContent = theme === 'light' ? '☀️' : '🌙';
-}
-function initTheme(){
-  let saved = 'dark';
-  try{ saved = localStorage.getItem('wire-desk-theme') || 'dark'; }catch(e){}
-  applyTheme(saved);
-}
-document.getElementById('themeToggle').addEventListener('click', () => {
-  const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
-  const next = current === 'light' ? 'dark' : 'light';
-  applyTheme(next);
-  try{ localStorage.setItem('wire-desk-theme', next); }catch(e){}
-});
-
 // ---------- init ----------
 (async function init(){
-  initTheme();
   initSidebarWidth();
   if(!checkStorageWorks()){
     showWarning('⚠ This browser is blocking saved data, so some settings won\'t be remembered between visits. Don\'t worry, Alex is on it!');
